@@ -306,7 +306,7 @@ describe("Parser", () => {
       )
       const tree = parser.parse()
       console.log(tree)
-      expect(tree.eval()).toBe(testCase.expected)
+      expect(tree.eval(undefined, undefined)).toBe(testCase.expected)
     })
   })
 
@@ -356,7 +356,7 @@ describe("Parser", () => {
       const parser = new Parser("", testCase.getFormula, tokens)
       const tree = parser.parse()
       console.log(tree)
-      expect(tree.eval()).toBe(testCase.expected)
+      expect(tree.eval(undefined, undefined)).toBe(testCase.expected)
     })
   })
 })

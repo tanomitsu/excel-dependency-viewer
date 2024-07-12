@@ -3,18 +3,21 @@
 import Excel from "exceljs"
 import ExcelUploadView from "@/features/FileUpload/components/ExcelUploadView"
 import { IdentifiableFile } from "@/features/FileUpload/utils/file"
-import { unreachable } from "@/utils"
+import { isNumeric, unreachable } from "@/utils"
 import {
   Alert,
   AlertProps,
   Box,
+  Button,
   CircularProgress,
   Paper,
   Snackbar,
   SnackbarOrigin,
+  Stack,
   Step,
   StepLabel,
   Stepper,
+  TextField,
   Typography,
 } from "@mui/material"
 import React from "react"
@@ -46,6 +49,14 @@ export default function Home(): React.JSX.Element {
   const [syntaxTree, setSyntaxTree] = React.useState<
     SyntaxTreeNode | undefined
   >(undefined)
+
+  const [customValueMap, setCustomValueMap] = React.useState<
+    Map<string, number>
+  >(new Map())
+
+  const [calcResultValueMap, setCalcResultValueMap] = React.useState<
+    Map<string, number>
+  >(new Map())
 
   const handleClose = (
     event: React.SyntheticEvent | Event,
@@ -135,6 +146,7 @@ export default function Home(): React.JSX.Element {
       parser.init()
 
       const tree = parser.parse()
+      tree.eval(undefined, undefined)
 
       setSyntaxTree(tree)
 
@@ -150,6 +162,75 @@ export default function Home(): React.JSX.Element {
       setIsLoading(false)
     }
   }, [files, sheetName, targetCellAddress])
+
+  const handleRecalculate = React.useCallback(() => {
+    setCalcResultValueMap((prev) => {
+      const newCalcResultMap = new Map(prev)
+      const onCalc = (address: string, result: number): void => {
+        newCalcResultMap.set(address, result)
+      }
+      syntaxTree?.eval(customValueMap, onCalc)
+      return newCalcResultMap
+    })
+  }, [customValueMap, syntaxTree])
+
+  const recTreeComponents = (
+    node: SyntaxTreeNode,
+    depth: number = 1
+  ): React.JSX.Element => {
+    const children = node.children.map((child) =>
+      recTreeComponents(
+        child,
+        node.getAddress() !== undefined ? depth + 1 : depth
+      )
+    )
+    if (node.getAddress() !== undefined) {
+      const address = node.getAddress() as string
+      return (
+        <Paper key={node.id} elevation={depth} sx={{ p: 2 }}>
+          <Stack spacing={2}>
+            <Stack direction="row" alignItems="flex-end" spacing={8}>
+              <TextField label="表示名" variant="standard" />
+              <Typography>{node.getAddress()}</Typography>
+              {node.getNodeType() === "LITERAL" ? (
+                <TextField
+                  label="値"
+                  type="number"
+                  variant="standard"
+                  value={customValueMap.get(address) ?? node.getValue()}
+                  onChange={(e) => {
+                    const newValue = e.target.value
+                    if (!isNumeric(newValue) && newValue !== "") {
+                      // do nothing
+                      return
+                    }
+                    const valueNum = newValue === "" ? 0 : Number(newValue)
+                    setCustomValueMap((prev) => {
+                      const newMap = new Map(prev)
+                      newMap.set(address, valueNum)
+                      return newMap
+                    })
+                  }}
+                />
+              ) : (
+                <Typography>
+                  計算結果:
+                  {calcResultValueMap.get(address) ?? node.getCalculatedValue()}
+                </Typography>
+              )}
+            </Stack>
+            {children}
+          </Stack>
+        </Paper>
+      )
+    }
+
+    if (children.length === 0 && children[0] !== undefined) {
+      return children[0]
+    }
+
+    return <React.Fragment key={node.id}>{children}</React.Fragment>
+  }
   return (
     <main>
       <Snackbar
@@ -211,7 +292,25 @@ export default function Home(): React.JSX.Element {
                   <CircularProgress />
                 </Box>
               ) : (
-                <Typography>{JSON.stringify(syntaxTree)}</Typography>
+                <Stack spacing={2} sx={{ p: 4 }}>
+                  {recTreeComponents(syntaxTree)}
+                  <Box
+                    sx={{
+                      display: "flex",
+                      justifyContent: "flex-end",
+                    }}
+                  >
+                    <Button
+                      variant="contained"
+                      size="medium"
+                      sx={{ px: 4 }}
+                      disabled={customValueMap.size === 0}
+                      onClick={handleRecalculate}
+                    >
+                      再計算
+                    </Button>
+                  </Box>
+                </Stack>
               )
             default:
               return unreachable(activeStep)
