@@ -25,7 +25,7 @@ export default function ExcelUploadView({
   return (
     <>
       <FileDropZone files={files} setFiles={setFiles} />
-      <Stack spacing={2}>
+      <Stack spacing={2} sx={{ px: 4 }}>
         <TextField
           id="sheet-name-input"
           label="シート名"
@@ -44,7 +44,6 @@ export default function ExcelUploadView({
           sx={{
             display: "flex",
             justifyContent: "flex-end",
-            px: 4,
           }}
         >
           <Button
