@@ -1,113 +1,224 @@
-import Image from "next/image";
+"use client"
 
-export default function Home() {
+import Excel from "exceljs"
+import ExcelUploadView from "@/features/FileUpload/components/ExcelUploadView"
+import { IdentifiableFile } from "@/features/FileUpload/utils/file"
+import { unreachable } from "@/utils"
+import {
+  Alert,
+  AlertProps,
+  Box,
+  CircularProgress,
+  Paper,
+  Snackbar,
+  SnackbarOrigin,
+  Step,
+  StepLabel,
+  Stepper,
+  Typography,
+} from "@mui/material"
+import React from "react"
+import { CellData } from "@/features/Excel/types"
+import { Parser } from "@/features/Excel/utils/parser"
+import { SyntaxTreeNode } from "@/features/Excel/utils/syntaxTree"
+
+const steps = ["Excelファイルをアップロード", "依存関係を確認"]
+
+type SnackState = SnackbarOrigin & {
+  isOpen: boolean
+  message: string
+  severity: AlertProps["severity"]
+}
+
+export default function Home(): React.JSX.Element {
+  const [activeStep, setActiveStep] = React.useState<0 | 1>(0)
+  const [sheetName, setSheetName] = React.useState("")
+  const [targetCellAddress, setTargetCellAddress] = React.useState("")
+  const [isLoading, setIsLoading] = React.useState(false)
+  const [snackState, setSnackState] = React.useState<SnackState>({
+    isOpen: false,
+    message: "",
+    vertical: "top",
+    horizontal: "center",
+    severity: "error",
+  })
+  const [files, setFiles] = React.useState<IdentifiableFile[]>([])
+  const [syntaxTree, setSyntaxTree] = React.useState<
+    SyntaxTreeNode | undefined
+  >(undefined)
+
+  const handleClose = (
+    event: React.SyntheticEvent | Event,
+    reason?: string
+  ): void => {
+    if (reason === "clickaway") {
+      return
+    }
+
+    setSnackState((prev) => ({
+      ...prev,
+      isOpen: false,
+    }))
+  }
+
+  const loadExcelFile = React.useCallback(async () => {
+    setIsLoading(true)
+    try {
+      const file = files[0]
+      if (file === undefined) {
+        setSnackState((prev) => ({
+          ...prev,
+          isOpen: true,
+          message: "ファイルがアップロードされていません。",
+          severity: "error",
+        }))
+        return
+      }
+      const workbook = new Excel.Workbook()
+      const arrayBuffer = await file.content.arrayBuffer()
+
+      await workbook.xlsx.load(arrayBuffer)
+      const worksheet = workbook.getWorksheet(sheetName)
+
+      if (worksheet === undefined) {
+        setSnackState((prev) => ({
+          ...prev,
+          isOpen: true,
+          message: `シートが見つかりません。(${sheetName})`,
+          severity: "error",
+        }))
+        return
+      }
+
+      const addressToCellMap = new Map<string, CellData>()
+
+      worksheet.eachRow({ includeEmpty: false }, (row) => {
+        row.eachCell({ includeEmpty: false }, (cell) => {
+          if (cell.type === Excel.ValueType.Number) {
+            addressToCellMap.set(cell.address, {
+              value: cell.value as number,
+              formula: undefined,
+            })
+          } else if (cell.type === Excel.ValueType.Formula) {
+            const formulaCell = cell.value as Excel.CellFormulaValue
+            addressToCellMap.set(cell.address, {
+              // TODO: 数値以外の計算結果も対応する
+              value: formulaCell.result as number,
+              formula: formulaCell.formula,
+            })
+          } else {
+            setSnackState((prev) => ({
+              ...prev,
+              isOpen: true,
+              message: `数値セルでも関数セルでもないものが含まれています。`,
+              severity: "error",
+            }))
+            return
+          }
+        })
+      })
+
+      const addressToFormula = (address: string): string => {
+        const cell = addressToCellMap.get(address)
+        if (cell === undefined) {
+          console.log(`cell[${address}] = undefined`)
+          // TODO: 仕様を考える
+          return "0"
+        }
+        if (cell.formula !== undefined) {
+          // FIXME: 結合する必要がないように変える
+          return `=${cell.formula}`
+        }
+        return cell.value.toString()
+      }
+
+      const parser = new Parser(targetCellAddress, addressToFormula)
+      parser.init()
+
+      const tree = parser.parse()
+
+      setSyntaxTree(tree)
+
+      setSnackState((prev) => ({
+        ...prev,
+        isOpen: true,
+        message: "ファイルのパースに成功しました。",
+        severity: "success",
+      }))
+    } catch (err) {
+      console.error(err)
+    } finally {
+      setIsLoading(false)
+    }
+  }, [files, sheetName, targetCellAddress])
   return (
-    <main className="flex min-h-screen flex-col items-center justify-between p-24">
-      <div className="z-10 w-full max-w-5xl items-center justify-between font-mono text-sm lg:flex">
-        <p className="fixed left-0 top-0 flex w-full justify-center border-b border-gray-300 bg-gradient-to-b from-zinc-200 pb-6 pt-8 backdrop-blur-2xl dark:border-neutral-800 dark:bg-zinc-800/30 dark:from-inherit lg:static lg:w-auto  lg:rounded-xl lg:border lg:bg-gray-200 lg:p-4 lg:dark:bg-zinc-800/30">
-          Get started by editing&nbsp;
-          <code className="font-mono font-bold">src/app/page.tsx</code>
-        </p>
-        <div className="fixed bottom-0 left-0 flex h-48 w-full items-end justify-center bg-gradient-to-t from-white via-white dark:from-black dark:via-black lg:static lg:size-auto lg:bg-none">
-          <a
-            className="pointer-events-none flex place-items-center gap-2 p-8 lg:pointer-events-auto lg:p-0"
-            href="https://vercel.com?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            By{" "}
-            <Image
-              src="/vercel.svg"
-              alt="Vercel Logo"
-              className="dark:invert"
-              width={100}
-              height={24}
-              priority
-            />
-          </a>
-        </div>
-      </div>
-
-      <div className="relative z-[-1] flex place-items-center before:absolute before:h-[300px] before:w-full before:-translate-x-1/2 before:rounded-full before:bg-gradient-radial before:from-white before:to-transparent before:blur-2xl before:content-[''] after:absolute after:-z-20 after:h-[180px] after:w-full after:translate-x-1/3 after:bg-gradient-conic after:from-sky-200 after:via-blue-200 after:blur-2xl after:content-[''] before:dark:bg-gradient-to-br before:dark:from-transparent before:dark:to-blue-700 before:dark:opacity-10 after:dark:from-sky-900 after:dark:via-[#0141ff] after:dark:opacity-40 sm:before:w-[480px] sm:after:w-[240px] before:lg:h-[360px]">
-        <Image
-          className="relative dark:drop-shadow-[0_0_0.3rem_#ffffff70] dark:invert"
-          src="/next.svg"
-          alt="Next.js Logo"
-          width={180}
-          height={37}
-          priority
-        />
-      </div>
-
-      <div className="mb-32 grid text-center lg:mb-0 lg:w-full lg:max-w-5xl lg:grid-cols-4 lg:text-left">
-        <a
-          href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          className="group rounded-lg border border-transparent px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:dark:border-neutral-700 hover:dark:bg-neutral-800/30"
-          target="_blank"
-          rel="noopener noreferrer"
+    <main>
+      <Snackbar
+        anchorOrigin={{
+          vertical: snackState.vertical,
+          horizontal: snackState.horizontal,
+        }}
+        open={snackState.isOpen}
+        autoHideDuration={6000}
+        onClose={handleClose}
+      >
+        <Alert
+          onClose={handleClose}
+          severity={snackState.severity}
+          variant="filled"
+          sx={{ width: "100%" }}
         >
-          <h2 className="mb-3 text-2xl font-semibold">
-            Docs{" "}
-            <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
-              -&gt;
-            </span>
-          </h2>
-          <p className="m-0 max-w-[30ch] text-sm opacity-50">
-            Find in-depth information about Next.js features and API.
-          </p>
-        </a>
-
-        <a
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          className="group rounded-lg border border-transparent px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:dark:border-neutral-700 hover:dark:bg-neutral-800/30"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2 className="mb-3 text-2xl font-semibold">
-            Learn{" "}
-            <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
-              -&gt;
-            </span>
-          </h2>
-          <p className="m-0 max-w-[30ch] text-sm opacity-50">
-            Learn about Next.js in an interactive course with&nbsp;quizzes!
-          </p>
-        </a>
-
-        <a
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          className="group rounded-lg border border-transparent px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:dark:border-neutral-700 hover:dark:bg-neutral-800/30"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2 className="mb-3 text-2xl font-semibold">
-            Templates{" "}
-            <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
-              -&gt;
-            </span>
-          </h2>
-          <p className="m-0 max-w-[30ch] text-sm opacity-50">
-            Explore starter templates for Next.js.
-          </p>
-        </a>
-
-        <a
-          href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          className="group rounded-lg border border-transparent px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:dark:border-neutral-700 hover:dark:bg-neutral-800/30"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2 className="mb-3 text-2xl font-semibold">
-            Deploy{" "}
-            <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
-              -&gt;
-            </span>
-          </h2>
-          <p className="m-0 max-w-[30ch] text-balance text-sm opacity-50">
-            Instantly deploy your Next.js site to a shareable URL with Vercel.
-          </p>
-        </a>
-      </div>
+          {snackState.message}
+        </Alert>
+      </Snackbar>
+      <Box
+        sx={{
+          width: "100vw",
+          height: "100vh",
+          m: 0,
+        }}
+      >
+        <Paper elevation={3} sx={{ w: "100%", px: 16, py: 4, mx: 0 }}>
+          <Stepper activeStep={activeStep}>
+            {steps.map((label) => (
+              <Step key={label}>
+                <StepLabel>
+                  <Typography fontSize="large">{label}</Typography>
+                </StepLabel>
+              </Step>
+            ))}
+          </Stepper>
+        </Paper>
+        {((): React.JSX.Element => {
+          switch (activeStep) {
+            case 0:
+              return (
+                <ExcelUploadView
+                  sheetName={sheetName}
+                  setSheetName={setSheetName}
+                  targetCellAddress={targetCellAddress}
+                  setTargetCellAddress={setTargetCellAddress}
+                  files={files}
+                  setFiles={setFiles}
+                  onNextButtonPush={() => {
+                    setActiveStep(1)
+                    loadExcelFile()
+                  }}
+                />
+              )
+            case 1:
+              return isLoading || syntaxTree === undefined ? (
+                <Box sx={{ display: "flex" }}>
+                  <CircularProgress />
+                </Box>
+              ) : (
+                <Typography>{JSON.stringify(syntaxTree)}</Typography>
+              )
+            default:
+              return unreachable(activeStep)
+          }
+        })()}
+      </Box>
     </main>
-  );
+  )
 }
