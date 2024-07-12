@@ -121,7 +121,6 @@ export default function Home(): React.JSX.Element {
       const addressToFormula = (address: string): string => {
         const cell = addressToCellMap.get(address)
         if (cell === undefined) {
-          console.log(`cell[${address}] = undefined`)
           // TODO: 仕様を考える
           return "0"
         }
